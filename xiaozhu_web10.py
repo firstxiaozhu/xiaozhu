@@ -93,6 +93,18 @@ def search_all_memory(keyword):
 
     return result
 
+def search_chat_history(keyword):
+    history = load_chat_history()
+    if not history:
+        return []
+
+    result = []
+    for line in history.strip().split("\n"):
+        if keyword in line:
+            result.append(line)
+
+    return result
+
 def delete_memory_by_category_index(category, index):
     data = read_memory()
 
@@ -128,15 +140,17 @@ def analyze_intent(user_input):
              "根据洋哥的话，判断他的意图是什么。\n"
              "只能返回JSON，格式如下：\n"
              "{\"action\": \"动作\", \"category\": \"分类\", \"content\": \"内容\", \"old\": \"旧内容关键词\", \"new\": \"新内容\"}\n\n"
-             "动作只能是：add、delete、modify、view、chat\n"
+                          "动作只能是：add、delete、modify、view、search、progress、chat\n"
              "add：用户提供了新的个人信息或重要事情，需要记住\n"
              "delete：用户想删除某条记忆\n"
              "modify：用户想修改某条记忆\n"
              "view：用户想查看记忆\n"
+             "search：用户想回忆以前说过或聊过的事情\n"
+             "progress：用户想梳理某件事的进展或阶段\n"
              "chat：普通聊天，不需要操作记忆\n\n"
              "分类只能是：基本情况、目标计划、习惯偏好、正在学习、重要事情、聊天笔记\n"
-             "old要尽量提取用户想删除或修改的旧内容关键词。\n"
              "如果不是记忆操作，category、content、old、new都返回空字符串。\n"
+             "search时，old返回用户想回忆的关键词。\n"
              "只返回JSON，不要解释。"},
             {"role": "user", "content": user_input}
         ]
@@ -144,7 +158,48 @@ def analyze_intent(user_input):
     result = response.choices[0].message.content
     return json5.loads(result)
 
-st.title("小猪")
+def analyze_note(user_input, ai_reply):
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": "你是小猪的笔记整理模块。\n"
+             "根据洋哥和小猪的这段对话，判断有没有值得记到聊天笔记里的内容。\n"
+             "如果值得记，返回JSON：{\"note\": true, \"content\": \"笔记内容\"}。\n"
+             "如果不值得记，返回：{\"note\": false, \"content\": \"\"}。\n"
+             "笔记要简洁，只记事实、决定、想法或进展，不要评价。\n"
+             "只返回JSON，不要解释。"},
+            {"role": "user", "content": "洋哥：" + user_input + "\n小猪：" + ai_reply}
+        ]
+    )
+    result = response.choices[0].message.content
+    return json5.loads(result)
+
+st.set_page_config(page_title="小猪", page_icon="🐷", layout="wide")
+
+st.markdown("""
+<style>
+    .main-title {
+        font-size: 1.6rem;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+    .stChatMessage {
+        border-radius: 12px;
+    }
+    @media only screen and (max-width: 768px) {
+        .main-title {
+            font-size: 1.3rem;
+        }
+        section.main {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">🐷 小猪</div>', unsafe_allow_html=True)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -166,6 +221,116 @@ if "pending_modify" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
+
+col1, col2 = st.columns([1, 5])
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("今日小结", use_container_width=True):
+        history = load_chat_history()
+
+        if not history:
+            ai_reply = "洋哥，今天还没有聊天记录。"
+        else:
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "你是小猪。请根据洋哥今天的聊天记录，生成一份简洁的每日小结。\n"
+                     "包括：今天聊了什么、有什么重要事情、有什么需要后续关注的。\n"
+                     "只根据聊天记录总结，不能编造。\n"
+                     "用简洁的条目列出。"},
+                    {"role": "user", "content": "以下是今天的聊天记录：\n" + history}
+                ]
+            )
+            ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
+
+    if st.button("习惯打卡", use_container_width=True):
+        data = read_memory()
+        habits = data.get("习惯偏好", [])
+
+        if not habits:
+            ai_reply = "洋哥，你还没有告诉我什么习惯想坚持。\n你可以先说，比如：我想坚持早睡早起。"
+        else:
+            habit_text = "\n".join(habits)
+
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "你是小猪。下面是洋哥想坚持的习惯，请帮他做一次简单的习惯打卡回顾。\n"
+                     "用鼓励的语气，提醒他坚持。不要编造打卡数据。\n"
+                     "可以问他今天做得怎么样。"},
+                    {"role": "user", "content": "洋哥的习惯：\n" + habit_text}
+                ]
+            )
+            ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
+
+with col2:
+    if st.button("本周复盘", use_container_width=True):
+        history = load_chat_history()
+
+        if not history:
+            ai_reply = "洋哥，暂时还没有聊天记录。"
+        else:
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "你是小猪。请根据洋哥近期的聊天记录，生成一份周复盘。\n"
+                     "包括：这周主要聊了什么、有哪些重要事情、有什么进展、下周可能需要注意什么。\n"
+                     "只根据聊天记录总结，不能编造。\n"
+                     "用简洁的条目列出。"},
+                    {"role": "user", "content": "以下是近期的聊天记录：\n" + history}
+                ]
+            )
+            ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
+
+    if st.button("学习计划", use_container_width=True):
+        data = read_memory()
+        learning = data.get("正在学习", [])
+
+        if not learning:
+            ai_reply = "洋哥，你还没有告诉我你正在学什么。\n你可以先说，比如：我在学Python。"
+        else:
+            learning_text = "\n".join(learning)
+
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "你是小猪。下面是洋哥正在学习的内容，请帮他制定一份简单可行的学习计划。\n"
+                     "要结合他目前的基础，不要太难，也不要太笼统。\n"
+                     "只根据提供的内容制定，不要编造。"},
+                    {"role": "user", "content": "洋哥正在学习：\n" + learning_text}
+                ]
+            )
+            ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
 
 user_input = st.chat_input("洋哥，请说")
 
@@ -317,6 +482,95 @@ if user_input:
         save_chat_history("assistant", ai_reply)
         st.stop()
 
+    elif action == "progress":
+        memory_matches = search_all_memory(old)
+        chat_matches = search_chat_history(old)
+
+        related = []
+
+        for m in memory_matches:
+            related.append("【" + m["category"] + "】" + m["content"])
+
+        for c in chat_matches:
+            related.append(c)
+
+        if not related:
+            ai_reply = "洋哥，我暂时没有找到关于“" + old + "”的记录，没法帮你梳理进度。"
+            with st.chat_message("assistant"):
+                st.write(ai_reply)
+            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
+            st.stop()
+
+        related_text = "\n".join(related)
+
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "你是小猪。下面是一些关于洋哥某件事的零散信息。\n"
+                 "请根据这些信息，帮他梳理目前的进展或阶段。\n"
+                 "只能根据提供的信息整理，不能编造。\n"
+                 "如果信息不够完整，就如实说明目前只能看出这些。"},
+                {"role": "user", "content": "洋哥想梳理关于“" + old + "”的进展。以下是相关信息：\n" + related_text}
+            ]
+        )
+
+        ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        note_check = analyze_note(user_input, ai_reply)
+ 
+        if note_check["note"]:
+            add_to_category("聊天笔记", note_check["content"])
+            st.toast("小猪记了一条聊天笔记")
+        st.stop()
+
+    elif action == "search":
+        memory_matches = search_all_memory(old)
+        chat_matches = search_chat_history(old)
+
+        related = []
+
+        for m in memory_matches:
+            related.append("【" + m["category"] + "】" + m["content"])
+
+        for c in chat_matches:
+            related.append(c)
+
+        if not related:
+            ai_reply = "洋哥，我暂时没找到和“" + old + "”相关的内容。"
+            with st.chat_message("assistant"):
+                st.write(ai_reply)
+            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
+            st.stop()
+
+        related_text = "\n".join(related)
+
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "你是小猪。下面会给你一些找到的相关信息。\n"
+                 "你只能根据这些信息回答，绝对不能编造、推测或补充不存在的内容。\n"
+                 "如果相关信息很少，就只说你找到什么，不要展开想象。\n"
+                 "如果相关信息里没有细节，就直接说“我只找到这些”。"},
+                {"role": "user", "content": "洋哥想回忆关于“" + old + "”的内容。以下是找到的相关信息：\n" + related_text}
+            ]
+        )
+
+        ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.stop()
+
     data = read_memory()
     memory_text = memory_to_text(data)
 
@@ -344,3 +598,12 @@ if user_input:
 
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
     save_chat_history("assistant", ai_reply)
+
+    note_check = analyze_note(user_input, ai_reply)
+
+    if note_check["note"]:
+        added = add_to_category("聊天笔记", note_check["content"])
+        if added:
+            st.toast("小猪记了一条聊天笔记")
+        else:
+            st.toast("小猪：这条笔记已经记过了")
