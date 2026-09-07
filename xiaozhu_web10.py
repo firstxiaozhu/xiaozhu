@@ -8,8 +8,11 @@ import os
 api_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
 if not api_key:
-    with open("key.txt", "r", encoding="utf-8") as f:
-        api_key = f.read().strip()
+    try:
+        with open("key.txt", "r", encoding="utf-8") as f:
+            api_key = f.read().strip()
+    except FileNotFoundError:
+        api_key = ""
 
 client = OpenAI(
     api_key=api_key,
