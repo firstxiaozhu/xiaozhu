@@ -5,14 +5,8 @@ import json
 import re
 import os
 
-api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-
-if not api_key:
-    try:
-        with open("key.txt", "r", encoding="utf-8") as f:
-            api_key = f.read().strip()
-    except FileNotFoundError:
-        api_key = ""
+with open("key.txt", "r", encoding="utf-8") as f:
+    api_key = f.read().strip()
 
 client = OpenAI(
     api_key=api_key,
@@ -38,6 +32,17 @@ def memory_to_text(data):
             text += "暂无\n"
         text += "\n"
     return text
+
+def save_chat_history(role, content):
+    with open("chat_history.txt", "a", encoding="utf-8") as f:
+        f.write(role + ":" + content + "\n")
+
+def load_chat_history():
+    try:
+        with open("chat_history.txt", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
 
 def add_to_category(category, content):
     data = read_memory()
@@ -138,6 +143,14 @@ st.title("小猪")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+    history = load_chat_history()
+    if history:
+        for line in history.strip().split("\n"):
+            if line.startswith("user:"):
+                st.session_state.messages.append({"role": "user", "content": line[5:]})
+            elif line.startswith("assistant:"):
+                st.session_state.messages.append({"role": "assistant", "content": line[10:]})
+
 if "pending_delete" not in st.session_state:
     st.session_state.pending_delete = None
 
@@ -155,6 +168,7 @@ if user_input:
         st.write(user_input)
 
     st.session_state.messages.append({"role": "user", "content": user_input})
+    save_chat_history("user", user_input)
 
     if user_input.startswith("删第"):
         m = re.search(r"删第(\d+)条", user_input)
@@ -173,6 +187,7 @@ if user_input:
                 st.write(ai_reply)
 
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.session_state.pending_delete = None
             st.stop()
 
@@ -196,6 +211,7 @@ if user_input:
                 st.write(ai_reply)
 
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.session_state.pending_modify = None
             st.stop()
 
@@ -221,6 +237,7 @@ if user_input:
             with st.chat_message("assistant"):
                 st.write(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.stop()
 
         if len(matches) == 1:
@@ -230,6 +247,7 @@ if user_input:
             with st.chat_message("assistant"):
                 st.write(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.stop()
 
         st.session_state.pending_delete = matches
@@ -243,6 +261,7 @@ if user_input:
             st.write(reply)
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
+        save_chat_history("assistant", reply)
         st.stop()
 
     elif action == "modify":
@@ -253,6 +272,7 @@ if user_input:
             with st.chat_message("assistant"):
                 st.write(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.stop()
 
         if len(matches) == 1:
@@ -262,6 +282,7 @@ if user_input:
             with st.chat_message("assistant"):
                 st.write(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+            save_chat_history("assistant", ai_reply)
             st.stop()
 
         st.session_state.pending_modify = matches
@@ -275,6 +296,7 @@ if user_input:
             st.write(reply)
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
+        save_chat_history("assistant", reply)
         st.stop()
 
     elif action == "view":
@@ -286,6 +308,7 @@ if user_input:
             st.write(ai_reply)
 
         st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
         st.stop()
 
     data = read_memory()
@@ -314,3 +337,4 @@ if user_input:
         st.write(ai_reply)
 
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+    save_chat_history("assistant", ai_reply)
