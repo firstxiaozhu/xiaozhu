@@ -222,11 +222,21 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-col1, col2 = st.columns([1, 5])
+with st.sidebar:
+    st.markdown("## 🐷 小猪功能")
 
-col1, col2 = st.columns(2)
+    if st.button("查看记忆", use_container_width=True):
+        data = read_memory()
+        memory_content = memory_to_text(data)
+        ai_reply = "洋哥，这是我目前记住的：\n\n" + memory_content
 
-with col1:
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
+
     if st.button("今日小结", use_container_width=True):
         history = load_chat_history()
 
@@ -241,6 +251,31 @@ with col1:
                      "只根据聊天记录总结，不能编造。\n"
                      "用简洁的条目列出。"},
                     {"role": "user", "content": "以下是今天的聊天记录：\n" + history}
+                ]
+            )
+            ai_reply = response.choices[0].message.content
+
+        with st.chat_message("assistant"):
+            st.write(ai_reply)
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        save_chat_history("assistant", ai_reply)
+        st.rerun()
+
+    if st.button("本周复盘", use_container_width=True):
+        history = load_chat_history()
+
+        if not history:
+            ai_reply = "洋哥，暂时还没有聊天记录。"
+        else:
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "你是小猪。请根据洋哥近期的聊天记录，生成一份周复盘。\n"
+                     "包括：这周主要聊了什么、有哪些重要事情、有什么进展、下周可能需要注意什么。\n"
+                     "只根据聊天记录总结，不能编造。\n"
+                     "用简洁的条目列出。"},
+                    {"role": "user", "content": "以下是近期的聊天记录：\n" + history}
                 ]
             )
             ai_reply = response.choices[0].message.content
@@ -279,32 +314,6 @@ with col1:
         save_chat_history("assistant", ai_reply)
         st.rerun()
 
-with col2:
-    if st.button("本周复盘", use_container_width=True):
-        history = load_chat_history()
-
-        if not history:
-            ai_reply = "洋哥，暂时还没有聊天记录。"
-        else:
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": "你是小猪。请根据洋哥近期的聊天记录，生成一份周复盘。\n"
-                     "包括：这周主要聊了什么、有哪些重要事情、有什么进展、下周可能需要注意什么。\n"
-                     "只根据聊天记录总结，不能编造。\n"
-                     "用简洁的条目列出。"},
-                    {"role": "user", "content": "以下是近期的聊天记录：\n" + history}
-                ]
-            )
-            ai_reply = response.choices[0].message.content
-
-        with st.chat_message("assistant"):
-            st.write(ai_reply)
-
-        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-        save_chat_history("assistant", ai_reply)
-        st.rerun()
-
     if st.button("学习计划", use_container_width=True):
         data = read_memory()
         learning = data.get("正在学习", [])
@@ -330,6 +339,29 @@ with col2:
 
         st.session_state.messages.append({"role": "assistant", "content": ai_reply})
         save_chat_history("assistant", ai_reply)
+        st.rerun()
+
+    if st.button("导出记忆", use_container_width=True):
+        data = read_memory()
+        memory_text = memory_to_text(data)
+
+        history = load_chat_history()
+
+        full_text = "【小猪记忆】\n\n" + memory_text + "\n\n【聊天记录】\n\n" + history
+
+        st.download_button(
+            label="点击下载记忆文件",
+            data=full_text,
+            file_name="小猪记忆备份.txt",
+            mime="text/plain"
+        )
+
+    if st.button("清空聊天", use_container_width=True):
+        st.session_state.messages = []
+        try:
+            os.remove("chat_history.txt")
+        except FileNotFoundError:
+            pass
         st.rerun()
 
 user_input = st.chat_input("洋哥，请说")
